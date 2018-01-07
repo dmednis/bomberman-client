@@ -5,80 +5,138 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdbool.h>
+
 #include "helpers.h"
+#include "constants.h"
 
-const char *JOIN_PACKET_CODE = "1";
+// Functions
+void setupServer();
+int joinRequest(char[NICKNAME_LENGTH]);
+void *serverCallback(void *arg);
 
-int socket_desc;
+// Global variables
+int socket_descriptor;
+struct sockaddr_in server;
 
-void threadFunc() {
-    char input[200];
+int player_ID;
+char nickname[NICKNAME_LENGTH];
 
-    while (strcmp(gets(input), "exit") != 0) {
-        if (send(socket_desc, input, strlen(input), 0) < 0) {
-            puts("Send failed");
-            exit(1);
-        } else {
-            printf("[2] %s \n", input);
-        }
-        bzero(input, 200);
-    }
-}
-
-int join_request(char nickname[23]) {
-    char join_packet[24];
-    bzero(join_packet, 24);
-    prepend(join_packet, JOIN_PACKET_CODE);
-    strcat(join_packet + 1, nickname);
-}
 
 int main(int argc, char *argv[]) {
-    struct sockaddr_in server;
-    char input[200];
-    char server_reply[2000];
-    int read_size;
-    pthread_t rec_thread;
+    char input[USER_INPUT];
+    pthread_t server_thread;
 
-    //Create socket
-    socket_desc = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_desc == -1) {
-        printf("Could not create socket");
-    }
+    //Creates socket
+    setupServer();
 
-    server.sin_addr.s_addr = inet_addr("172.20.10.2");
-    server.sin_family = AF_INET;
-    server.sin_port = htons(8888);
-
-    //Connect to remote server
-    if (connect(socket_desc, (struct sockaddr *) &server, sizeof(server)) < 0) {
+    //Connects to the server
+    if (connect(socket_descriptor, (struct sockaddr *) &server, sizeof(server)) < 0) {
         puts("connect error");
         return 1;
+    } else {
+        puts("Connected");
     }
 
-    puts("Connected\n");
+
+    // Gets user name from input
+    puts("Enter your user name\n");
+    bzero(nickname, NICKNAME_LENGTH);
+    fgets(nickname, NICKNAME_LENGTH, stdin);
+    player_ID = joinRequest(nickname);
+
+    // Starts a thread for server responses
+    pthread_create(&server_thread, NULL, serverCallback, NULL);
+
+    // Checks user input
+    while (strcmp(fgets(input, NICKNAME_LENGTH, stdin), "end\n") != 0){
+        ///////////////////////// DEBUGING /////////////////////////
+        if (send(socket_descriptor, input, strlen(input), 0) < 0) {
+            puts("Send failed");
+        }
+        bzero(input, USER_INPUT);
+        ///////////////////////// DEBUGING /////////////////////////
+    }
+
+    return 0;
+}
 
 
-    pthread_create(&rec_thread, NULL, threadFunc, NULL);
+int joinRequest(char nickname[NICKNAME_LENGTH]) {
+    char join_packet[NICKNAME_LENGTH + 1];
+    char response[JOIN_RESPONSE];
+    char response_code = NULL;
+    int player_ID = NULL;
+
+    bzero(join_packet, NICKNAME_LENGTH + 1);
+    prepend_char(join_packet, JOIN_PACKET_CODE);
+    join_packet[0] = JOIN_PACKET_CODE;
+    memmove(join_packet + 1, nickname, strlen(nickname));
+    puts(join_packet); //TODO: logging
+
+    if (send(socket_descriptor, join_packet, NICKNAME_LENGTH + 1, 0) < 0) {
+        puts("Send failed");
+    }
+
+    if (read(socket_descriptor, response, 3) < 0) {
+        puts("Read failed");
+    } else {
+        if (response[0] == JOIN_RESPONSE_CODE) {
+            response_code = response[1];
+
+            switch (response_code) {
+                case SUCCESSFUL_CONNECTION:
+                    // Converts char to integer
+                    player_ID = response[2] - '0';
+                    break;
+
+                case ACTIVE_GAME:
+                    puts("Active game on server, please wait!\n");
+
+                case FULL_SERVER:
+                    puts("Server is full, please wait!\n");
+
+                default:break;
+            }
+        }
+    }
+
+    return player_ID;
+}
 
 
-    //Receive a reply from the server
-    //Receive a message from client
+void *serverCallback(void *arg) {
+    char server_reply[RESPONSE_LENGTH];
+    ssize_t read_size;
 
-    while ((read_size = recv(socket_desc, server_reply, 2000, 0)) > 0) {
-        //Send the message back to client
+    // Checks whether server hasn't disconnected
+    while ((read_size = recv(socket_descriptor, server_reply, RESPONSE_LENGTH, 0)) > 0) {
+        ///////////////////////// DEBUGING /////////////////////////
         printf("[1] %s \n", server_reply);
+        ///////////////////////// DEBUGING /////////////////////////
         bzero(server_reply, 2000);
     }
 
     if (read_size == 0) {
-        puts("Client disconnected");
+        puts("Server disconnected");
         fflush(stdout);
     } else if (read_size == -1) {
-        perror("recv failed");
+        perror("receiving failed");
+    } else {
+
     }
 
-    //Free the socket pointer
-    free(socket_desc);
-
-    return 0;
+    return NULL;
 }
+
+void setupServer() {
+    socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_descriptor == -1) {
+        printf("Could not create socket");
+    }
+
+    server.sin_addr.s_addr = inet_addr(INET_ADDRESS);
+    server.sin_family = AF_INET;
+    server.sin_port = htons(PORT);
+}
+
