@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.8)
-project(cmake_build_debug)
+project(bomberman_client)
 
 set(CMAKE_C_STANDARD 90)
 
-set(SOURCE_FILES main.c helpers.h helpers.c constants.h)
-add_executable(cmake_build_debug ${SOURCE_FILES})
+find_package(Curses REQUIRED)
+include_directories(${CURSES_INCLUDE_DIR})
+
+set(SOURCE_FILES main.c helpers.h helpers.c constants.h drawing.h drawing.c)
+add_executable(bomberman_client ${SOURCE_FILES})
+
+target_link_libraries(bomberman_client ${CURSES_LIBRARIES})
