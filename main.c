@@ -8,8 +8,8 @@
 #include <stdbool.h>
 #include <ncurses.h>
 
-#include "helpers.h"
 #include "constants.h"
+#include "helpers.h"
 #include "drawing.h"
 
 // Functions
@@ -17,10 +17,10 @@ void setupServer();
 int joinRequest(char[NICKNAME_LENGTH]); // Sends joint request and receives response
 void handleInput(int key);
 void *serverCallback(void *arg); // Multi-thread callbakc function for handling server responses
-void packet_handler(const unsigned char replay[]); // Handles different packets received from server
+void packet_handler(unsigned char reply[]); // Handles different packets received from server
 
 //Server response handling functions
-void lobbyStatus(const unsigned char *replay);
+void lobbyStatus(unsigned char *reply);
 
 // Global variables
 int socket_descriptor;
@@ -33,8 +33,8 @@ char nickname[NICKNAME_LENGTH];
 
 int main(int argc, char *argv[]) {
     char input[USER_INPUT];
-    int key;
-    pthread_t server_thread, lobby_thread;
+    pthread_t server_thread, draw_thread;
+    char debug[NICKNAME_LENGTH];
 
     //Creates socket
     setupServer();
@@ -47,20 +47,26 @@ int main(int argc, char *argv[]) {
         puts("Connected");
     }
 
+    // Starts a thread for server responses
+    pthread_create(&draw_thread, NULL, draw_callback, NULL);
+    pthread_create(&server_thread, NULL, serverCallback, NULL);
+
+
     // Gets user name from input
     puts("Enter your user name\n");
     bzero(nickname, NICKNAME_LENGTH);
-    fgets(nickname, NICKNAME_LENGTH, stdin);
+    strcpy(nickname, argv[1]);
+    fgets(debug, NICKNAME_LENGTH, stdin);
     player_ID = joinRequest(nickname);
 
     puts("Waiting for the game to start \n");
 
-    // Starts a thread for server responses
-    pthread_create(&server_thread, NULL, serverCallback, NULL);
+
 
     // Checks user input
     // TODO: needs to changed to check user game window input
-    while (strcmp(fgets(input, NICKNAME_LENGTH, stdin), "end\n") != 0){
+    while (strcmp(fgets(input, 200, stdin), "end\n") != 0){
+        puts(input);
 
         ///////////////////////// DEBUGING /////////////////////////
         if (send(socket_descriptor, input, strlen(input), 0) < 0) {
@@ -87,8 +93,8 @@ int main(int argc, char *argv[]) {
 int joinRequest(char nickname[NICKNAME_LENGTH]) {
     unsigned char join_packet[NICKNAME_LENGTH + 1];
     unsigned char response[JOIN_RESPONSE];
-    unsigned char response_code = NULL;
-    int player_ID = NULL;
+    unsigned char response_code;
+    int player_ID;
 
     bzero(join_packet, NICKNAME_LENGTH + 1);
     join_packet[0] = JOIN_PACKET_CODE;
@@ -110,7 +116,7 @@ int joinRequest(char nickname[NICKNAME_LENGTH]) {
                     // Converts char to integer
                     puts("Active game on server, please wait!\n");
                     // TODO: start sending keepalive packet in a new thread
-                    printf("response code is %d \n", response_code);
+//                    printf("response code is %d \n", response_code);
                     player_ID = response[2];
                     break;
 
@@ -137,11 +143,8 @@ void *serverCallback(void *arg) {
 
     // Checks whether server hasn't disconnected
     while ((read_size = recv(socket_descriptor, server_replay, RESPONSE_LENGTH, 0)) > 0) {
-        ///////////////////////// DEBUGING /////////////////////////
-        printf("[1] %s \n", server_replay);
-        ///////////////////////// DEBUGING /////////////////////////
         packet_handler(server_replay);
-        bzero(server_replay, 2000);
+        bzero(server_replay, RESPONSE_LENGTH);
     }
 
     if (read_size == 0) {
@@ -154,12 +157,13 @@ void *serverCallback(void *arg) {
     return NULL;
 }
 
-void packet_handler(const unsigned char replay[RESPONSE_LENGTH]) {
-    unsigned char response_code = replay[0];
+void packet_handler(unsigned char reply[RESPONSE_LENGTH]) {
+    unsigned char response_code = reply[0];
+    printf("Response code is %d \n", response_code);
 
     switch (response_code) {
         case LOBBY_RESPONSE_CODE:
-            lobbyStatus(replay);
+            lobbyStatus(reply);
             break;
 
         case GAME_START_CODE:
@@ -178,11 +182,8 @@ void packet_handler(const unsigned char replay[RESPONSE_LENGTH]) {
     }
 }
 
-void lobbyStatus(const unsigned char *replay) {
-    pthread_t lobby_thread;
-
-    pthread_create(&lobby_thread, NULL, lobbyCallback, NULL);
-    draw_lobby_info(replay);
+void lobbyStatus(unsigned char *reply) {
+    queue_lobby_info(reply);
 }
 
 void setupServer() {
