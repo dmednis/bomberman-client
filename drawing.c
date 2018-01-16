@@ -2,13 +2,20 @@
 #include <curses.h>
 #include <stdlib.h>
 #include <string.h>
+#include <SDL2/SDL_video.h>
+#include <SDL2/SDL.h>
 #include "drawing.h"
 
 // DRAWING TYPES
 const int DRAW_LOBBY = 1;
 const int DRAW_GAME = 2;
 
-WINDOW *lobby_window, *game_window;
+static const int width = 800;
+static const int height = 600;
+
+SDL_Window *lobby_window;
+SDL_Renderer *renderer;
+
 DrawQueue *drawqueue;
 
 DrawQueue *create_draw_queue() {
@@ -123,15 +130,36 @@ void close_window(WINDOW *window) {
 void *draw_callback(void *arg) {
     drawqueue = create_draw_queue();
 
-    initscr();
-    clear();
-    curs_set(0);
-    noecho();
-    lobby_window = newwin(20, 100, 0, 0);
 
-    keypad(lobby_window, TRUE);
-    box(lobby_window, 0, 0);
-    wrefresh(lobby_window);
+    // Initialize SDL
+    SDL_Init(SDL_INIT_VIDEO);
+    lobby_window = SDL_CreateWindow("Hello, SDL2",
+                                    SDL_WINDOWPOS_UNDEFINED,
+                                    SDL_WINDOWPOS_UNDEFINED,
+                                    width,
+                                    height,
+                                    SDL_WINDOW_OPENGL);
+
+    renderer = SDL_CreateRenderer(lobby_window,
+                                                -1,
+                                                SDL_RENDERER_ACCELERATED |
+                                                        SDL_RENDERER_PRESENTVSYNC);
+
+    bool running = true;
+    SDL_Event event;
+    while(running) {
+        // Process events
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running = false;
+            }
+        }
+
+        // Clear screen with black
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+    }
+
 
     while (drawqueue != NULL) {
         if (drawqueue->size > 0) {
@@ -211,16 +239,16 @@ void queue_lobby_info(unsigned char *reply) {
 
 void draw_lobby(LobbyDrawable *drawable) {
     int player_count = drawable->size;
-    mvwprintw(lobby_window, 0, 0, "Player count: %d \n", player_count);
+//    mvwprintw(lobby_window, 0, 0, "Player count: %d \n", player_count);
 
     LobbyItem *temp = drawable->head;
     int i = 1;
 
     while (temp != NULL) {
-        mvwprintw(lobby_window, i, 0, "Player (ID %d ) %s status: %d",
-                  temp->player_id,
-                  temp->name,
-                  temp->status);
+//        mvwprintw(lobby_window, i, 0, "Player (ID %d ) %s status: %d",
+//                  temp->player_id,
+//                  temp->name,
+//                  temp->status);
 
         temp = temp->next;
         i ++;
